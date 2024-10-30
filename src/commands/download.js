@@ -2,7 +2,7 @@ const ytdl = require("@distube/ytdl-core");
 const fs = require("fs");
 const path = require("path");
 const { formatFileSize, sanitizeFileName } = require("../helpers/main");
-const CHANNEL_USERNAME = "@secrets_shopping";
+const CHANNEL_USERNAME = process.env.CHANNEL_USERNAME;
 async function downloadVideo(videoUrl, chatId, bot, userId) {
   try {
     ensureDownloadDirectory();
@@ -39,7 +39,9 @@ async function downloadVideo(videoUrl, chatId, bot, userId) {
     const videoInfo = await ytdl.getInfo(videoUrl);
     const videoTitle = videoInfo.videoDetails.title;
     const sanitizedTitle = sanitizeFileName(videoTitle);
-    const formats = videoInfo.formats.filter((format) => format.hasVideo);
+    const formats = videoInfo.formats.filter(
+      (format) => format.hasVideo && format.hasAudio
+    );
 
     if (formats.length === 0) {
       throw new Error("Не найдено подходящего формата");

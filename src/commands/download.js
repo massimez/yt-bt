@@ -2,6 +2,8 @@ const ytdl = require("@distube/ytdl-core");
 const fs = require("fs");
 const path = require("path");
 const { formatFileSize, sanitizeFileName } = require("../helpers/main");
+require("dotenv").config();
+
 const CHANNEL_USERNAME = process.env.CHANNEL_USERNAME;
 async function downloadVideo(videoUrl, chatId, bot, userId) {
   try {

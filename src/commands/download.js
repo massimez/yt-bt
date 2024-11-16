@@ -17,7 +17,22 @@ const ERROR_MESSAGES = {
     "❌ Извините, произошла ошибка при обработке вашего видео. Пожалуйста, попробуйте позже.",
 };
 
+// In-memory store for tracking user requests
+const userRequests = {};
+const RATE_LIMIT_TIME = 10000; // 10 seconds
+
 async function downloadVideo(videoUrl, chatId, bot, userId) {
+  // Check if the user is currently processing a request
+  if (userRequests[userId] && userRequests[userId].isProcessing) {
+    return await bot.sendMessage(
+      chatId,
+      "⏳ Пожалуйста, подождите, пока ваш предыдущий запрос не будет завершен."
+    );
+  }
+
+  // Set the user as processing
+  userRequests[userId] = { isProcessing: true };
+
   try {
     ensureDownloadDirectory();
     await checkUserSubscription(bot, chatId, userId);
@@ -56,6 +71,14 @@ async function downloadVideo(videoUrl, chatId, bot, userId) {
       chatId,
       error.message || ERROR_MESSAGES.processingError
     );
+  } finally {
+    // Reset the user's processing status after the request is complete
+    userRequests[userId].isProcessing = false;
+
+    // Set a timeout to remove the user from the requests object after the rate limit time
+    setTimeout(() => {
+      delete userRequests[userId];
+    }, RATE_LIMIT_TIME);
   }
 }
 

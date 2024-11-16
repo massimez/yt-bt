@@ -9,7 +9,7 @@ const axios = require("axios");
 const CHANNEL_USERNAME = process.env.CHANNEL_USERNAME;
 const DOWNLOAD_DIR = path.join(__dirname, "../downloads");
 const ERROR_MESSAGES = {
-  notSubscribed: `Пожалуйста, подпишитесь, чтобы продолжить использовать бота: ${CHANNEL_USERNAME}`,
+  notSubscribed: `Пожалуйста, подпишитесь, чтобы продолжить использовать бота: ${CHANNEL_USERNAME} 🙂`,
   invalidUrl: "Пожалуйста, отправьте действительный URL видео YouTube.",
   noSuitableFormat: "Не найдено подходящего формата",
   uploadFailed: "❌ Не удалось загрузить видео. Пожалуйста, попробуйте снова.",

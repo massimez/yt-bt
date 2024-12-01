@@ -17,7 +17,7 @@ function formatFileSize(bytes) {
 
 function sanitizeFileName(title) {
   return title
-    .replace(/[<>:"/\\|?*]/g, "") // Remove invalid characters
+    ?.replace(/[<>:"/\\|?*]/g, "") // Remove invalid characters
     .replace(/\s+/g, "_") // Replace spaces with underscores
     .substring(0, 255); // Limit length to 255 characters
 }

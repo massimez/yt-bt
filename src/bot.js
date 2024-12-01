@@ -3,6 +3,9 @@ const { setupDownloadDirectory } = require("./helpers/main");
 const { handleStart } = require("./commands/start");
 const { handleHelp } = require("./commands/help");
 const { downloadVideo } = require("./commands/download");
+const cp = require("child_process");
+const ffmpeg = require("ffmpeg-static");
+
 require("dotenv").config();
 
 // Создание директории для загрузок

@@ -5,7 +5,6 @@ const ytdl = require("@distube/ytdl-core");
 const cp = require("child_process");
 const readline = require("readline");
 const ffmpeg = require("ffmpeg-static");
-const tmp = require("tmp");
 
 require("dotenv").config();
 const DOWNLOAD_DIR = path.join(__dirname, "../downloads");

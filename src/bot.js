@@ -20,17 +20,14 @@ bot.on("message", (msg) => {
   const userId = msg.from.id;
   const messageText = msg.text;
 
-  // Игнорировать команды
   if (messageText?.startsWith("/")) return;
 
   // Проверка URL YouTube и загрузка видео
   downloadVideo(messageText, chatId, bot, userId);
 });
 
-// Обработчик команды /start
 bot.onText(/\/start/, (msg) => handleStart(msg, bot));
 
-// Обработчик команды /help
 bot.onText(/\/help/, (msg) => handleHelp(msg, bot));
 
 // Обработчик ошибок для опроса

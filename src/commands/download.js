@@ -47,15 +47,14 @@ async function downloadVideo(videoUrl, chatId, bot, userId) {
     ensureDownloadDirectory();
     await checkUserSubscription(bot, chatId, userId);
     validateVideoUrl(videoUrl, chatId, bot);
-
     const processingMessage = await bot.sendMessage(
       chatId,
       "🎥 Обработка видео..."
     );
     const videoInfo = await ytdl.getInfo(videoUrl);
-
     const videoTitle = videoInfo.videoDetails.title;
     const sanitizedTitle = sanitizeFileName(videoTitle);
+
     await updateProcessingMessage(
       bot,
       chatId,
@@ -102,8 +101,14 @@ function ensureDownloadDirectory() {
 }
 
 async function checkUserSubscription(bot, chatId, userId) {
-  const chatMember = await bot.getChatMember(CHANNEL_USERNAME, userId);
-  if (!["member", "administrator", "creator"].includes(chatMember.status)) {
+  let chatMember;
+  try {
+    chatMember = await bot.getChatMember(CHANNEL_USERNAME, userId);
+  } catch (error) {}
+  if (
+    chatMember &&
+    !["member", "administrator", "creator"].includes(chatMember.status)
+  ) {
     throw new Error(ERROR_MESSAGES.notSubscribed);
   }
 }
@@ -116,8 +121,6 @@ function validateVideoUrl(videoUrl, chatId, bot) {
 
 const getVideoFormat = (formats, quality) => {
   // First, try to find HDR format if quality is 4K or above
-
-  let hasAudioAndVideo = false;
 
   // if (["2160p"].includes(quality)) {
   //   const hdrFormat = formats.find(
@@ -136,7 +139,6 @@ const getVideoFormat = (formats, quality) => {
     return isQualityMatch && format.hasVideo && format.hasAudio;
   });
 
-  if (format) hasAudioAndVideo = true;
   if (!format) {
     format = formats.find(
       (format) => format.qualityLabel === quality && format.hasVideo
@@ -147,10 +149,17 @@ const getVideoFormat = (formats, quality) => {
 };
 
 async function updateProcessingMessage(bot, chatId, messageId, videoTitle) {
-  await bot.editMessageText(`🎥 Загрузка видео...\nНазвание: ${videoTitle}\n`, {
-    chat_id: chatId,
-    message_id: messageId,
-  });
+  try {
+    await bot.editMessageText(
+      `🎥 Загрузка видео...\nНазвание: ${videoTitle}\n`,
+      {
+        chat_id: chatId,
+        message_id: messageId,
+      }
+    );
+  } catch (error) {
+    console.error(error.message);
+  }
 }
 // Global error handling
 process.on("unhandledRejection", (reason, promise) => {
@@ -271,7 +280,7 @@ async function downloadVideoFile(
 
       // Prepare the progress bar
       let progressbarHandle = null;
-      const progressbarInterval = 2000;
+      const progressbarInterval = 3500;
 
       const ffmpegProcess = cp.spawn(
         ffmpeg,
@@ -317,6 +326,7 @@ async function downloadVideoFile(
           progressbarHandle = setInterval(() => {
             showProgress();
             try {
+              console.log(chatId);
               bot.editMessageText(
                 `🎥 Загрузка видео...\nНазвание: ${videoTitle}\nПрогресс:${` ${(
                   (tracker.video.downloaded / tracker.video.total) *
@@ -327,7 +337,9 @@ async function downloadVideoFile(
                   message_id: messageId,
                 }
               );
-            } catch (error) {}
+            } catch (error) {
+              console.log(error.message);
+            }
           }, progressbarInterval);
         }
         const lines = chunk.toString().trim().split("\n");

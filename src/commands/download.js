@@ -79,10 +79,10 @@ async function downloadVideo(videoUrl, chatId, bot, userId) {
     fs.unlinkSync(filePath);
   } catch (error) {
     console.error("Ошибка:", error.message);
-    await bot.sendMessage(
-      chatId,
-      error.message || ERROR_MESSAGES.processingError
-    );
+    const errorMessage = Object.values(ERROR_MESSAGES).includes(error.message)
+      ? error.message
+      : "";
+    if (errorMessage) await bot.sendMessage(chatId, errorMessage);
   } finally {
     // Reset the user's processing status after the request is complete
     userRequests[userId].isProcessing = false;

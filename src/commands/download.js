@@ -7,6 +7,7 @@ const readline = require("readline");
 const ffmpeg = require("ffmpeg-static");
 
 require("dotenv").config();
+const USERS_FILE = "users.json";
 const DOWNLOAD_DIR = path.join(__dirname, "../downloads");
 const CHANNEL_USERNAME = process.env.CHANNEL_USERNAME;
 const ERROR_MESSAGES = {
@@ -17,10 +18,10 @@ const ERROR_MESSAGES = {
   processingError:
     "❌ Извините, произошла ошибка при обработке вашего видео. Пожалуйста, попробуйте позже.",
   serviceUnavailable: "",
+  maxFileSize:
+    "Упс! 😅 Похоже, вы превысили максимальный размер файла для загрузки.",
 };
 
-// In-memory store for tracking user requests
-const userRequests = {};
 const RATE_LIMIT_TIME = 10000; // 10 seconds
 const validQualities = [
   "144p",
@@ -33,65 +34,67 @@ const validQualities = [
   "2160p",
 ];
 async function downloadVideo(videoUrl, chatId, bot, userId) {
-  // Check if the user is currently processing a request
-  if (userRequests[userId] && userRequests[userId].isProcessing) {
-    return await bot.sendMessage(
-      chatId,
-      "⏳ Пожалуйста, подождите, пока ваш предыдущий запрос не будет завершен."
-    );
-  }
-  // Set the user as processing
-  userRequests[userId] = { isProcessing: true };
+  await requestHandler.process(userId, chatId, bot, async () => {
+    try {
+      ensureDownloadDirectory();
+      await checkUserSubscription(bot, chatId, userId);
+      validateVideoUrl(videoUrl, chatId, bot);
+      const processingMessage = await bot.sendMessage(
+        chatId,
+        "🎥 Обработка видео..."
+      );
+      const videoInfo = await ytdl.getInfo(videoUrl);
+      const videoTitle = videoInfo.videoDetails.title;
+      const sanitizedTitle = sanitizeFileName(videoTitle);
 
-  try {
-    ensureDownloadDirectory();
-    await checkUserSubscription(bot, chatId, userId);
-    validateVideoUrl(videoUrl, chatId, bot);
-    const processingMessage = await bot.sendMessage(
-      chatId,
-      "🎥 Обработка видео..."
-    );
-    const videoInfo = await ytdl.getInfo(videoUrl);
-    const videoTitle = videoInfo.videoDetails.title;
-    const sanitizedTitle = sanitizeFileName(videoTitle);
+      await updateProcessingMessage(
+        bot,
+        chatId,
+        processingMessage.message_id,
+        videoTitle
+      );
+      const selectedFormat = getVideoFormat(videoInfo.formats, "360p");
+      const maxSizeInMB = 48; // Maximum size in megabytes
+      const maxSizeInBytes = maxSizeInMB * 1024 * 1024; // Convert MB to bytes
+      if (selectedFormat.contentLength > maxSizeInBytes) {
+        throw new Error(ERROR_MESSAGES.maxFileSize);
+      }
 
-    await updateProcessingMessage(
-      bot,
-      chatId,
-      processingMessage.message_id,
-      videoTitle
-    );
-    const selectedFormat = getVideoFormat(videoInfo.formats, "360p");
-
-    const filePath = await downloadVideoFile(
-      videoUrl,
-      selectedFormat,
-      sanitizedTitle,
-      bot,
-      chatId,
-      processingMessage.message_id,
-      videoTitle
-    );
-    await sendVideoToChat(bot, chatId, filePath, videoTitle);
-    await bot
-      .deleteMessage(chatId, processingMessage.message_id)
-      .catch(() => {});
-    fs.unlinkSync(filePath);
-  } catch (error) {
-    console.error("Ошибка:", error.message);
-    const errorMessage = Object.values(ERROR_MESSAGES).includes(error.message)
-      ? error.message
-      : "";
-    if (errorMessage) await bot.sendMessage(chatId, errorMessage);
-  } finally {
-    // Reset the user's processing status after the request is complete
-    userRequests[userId].isProcessing = false;
-
-    // Set a timeout to remove the user from the requests object after the rate limit time
-    setTimeout(() => {
-      delete userRequests[userId];
-    }, RATE_LIMIT_TIME);
-  }
+      const filePath =
+        selectedFormat.hasAudio && selectedFormat.hasVideo
+          ? await downloadVideoWithAudio(
+              videoUrl,
+              selectedFormat,
+              sanitizedTitle,
+              bot,
+              chatId,
+              processingMessage.message_id,
+              videoTitle
+            )
+          : await downloadVideoFile(
+              videoUrl,
+              selectedFormat,
+              sanitizedTitle,
+              bot,
+              chatId,
+              processingMessage.message_id,
+              videoTitle
+            );
+      await sendVideoToChat(bot, chatId, filePath, videoTitle);
+      fs.unlinkSync(filePath);
+      await bot
+        .deleteMessage(chatId, processingMessage.message_id)
+        .catch(() => {});
+    } catch (error) {
+      fs.unlinkSync(filePath);
+      console.error("Ошибка:", error.message);
+      const errorMessage = Object.values(ERROR_MESSAGES).includes(error.message)
+        ? error.message
+        : "";
+      if (errorMessage) await bot.sendMessage(chatId, errorMessage);
+    } finally {
+    }
+  });
 }
 
 function ensureDownloadDirectory() {
@@ -138,7 +141,6 @@ const getVideoFormat = (formats, quality) => {
     const isQualityMatch = quality ? format.qualityLabel === quality : true;
     return isQualityMatch && format.hasVideo && format.hasAudio;
   });
-
   if (!format) {
     format = formats.find(
       (format) => format.qualityLabel === quality && format.hasVideo
@@ -234,7 +236,7 @@ async function downloadVideoFile(
   );
   // Function to attempt downloading video and audio
   const attemptDownload = (attempt) => {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       // Get audio and video streams
       const audio = ytdl(url, { quality: "highestaudio" })
         .on("progress", (_, downloaded, total) => {
@@ -397,5 +399,128 @@ async function sendVideoToChat(bot, chatId, filePath, videoTitle) {
 function isValidYoutubeUrl(url) {
   return ytdl.validateURL(url);
 }
+async function downloadVideoWithAudio(
+  url,
+  videoFormat,
+  sanitizedTitle,
+  bot,
+  chatId,
+  messageId,
+  videoTitle
+) {
+  const outputFilePath = path.join(
+    DOWNLOAD_DIR,
+    `${sanitizedTitle}_output_${Date.now()}.mp4`
+  );
+  const fileStream = fs.createWriteStream(outputFilePath);
+  try {
+    const response = await fetch(videoFormat.url);
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    if (!response.body) {
+      throw new Error("Response body is null");
+    }
+
+    const reader = response.body.getReader();
+
+    async function* streamReader() {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          yield value;
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    }
+    for await (const chunk of streamReader()) {
+      if (!fileStream.write(chunk)) {
+        await new Promise((resolve) => fileStream.once("drain", resolve));
+      }
+    }
+    fileStream.end();
+
+    return outputFilePath;
+  } catch (error) {
+    console.error("Error downloading video:", error);
+    reject("Error downloading video: " + error.message);
+  }
+}
 
 module.exports = { downloadVideo };
+
+var requestHandler = {
+  requests: new Map(),
+
+  async saveNewUser(userId) {
+    try {
+      // Read existing users
+      let users = [];
+      try {
+        const data = fs.readFileSync(USERS_FILE);
+        users = JSON.parse(data);
+      } catch {
+        // File doesn't exist, start with empty array
+      }
+
+      // Add new user with current date
+      const today = new Date();
+      const dateStr = `${today.getDate()}.${
+        today.getMonth() + 1
+      }.${today.getFullYear()}`;
+
+      // Check if user already exists
+      if (!users.some((user) => user.id === userId)) {
+        users.push({
+          id: userId,
+          date: dateStr,
+        });
+
+        // Save updated list
+        fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+      }
+    } catch (error) {
+      console.error("Error saving user:", error);
+    }
+  },
+
+  async process(userId, chatId, bot, requestFunc) {
+    const currentTime = Date.now();
+    const userState = this.requests.get(userId);
+
+    // Check if user has an active request
+    if (
+      userState?.isProcessing &&
+      currentTime < userState.time + RATE_LIMIT_TIME
+    ) {
+      return await bot.sendMessage(
+        chatId,
+        "⏳ Пожалуйста, подождите, пока ваш предыдущий запрос не будет завершен."
+      );
+    }
+
+    try {
+      // Set processing state
+      this.requests.set(userId, { isProcessing: true, time: currentTime });
+
+      // Save user info
+      await this.saveNewUser(userId);
+
+      // Execute the request
+      const result = await requestFunc();
+
+      // Clear processing state
+      this.requests.set(userId, { isProcessing: false, time: currentTime });
+
+      return result;
+    } catch (error) {
+      // Clear processing state on error
+      this.requests.set(userId, { isProcessing: false, time: currentTime });
+      throw error;
+    }
+  },
+};

@@ -6,7 +6,8 @@ node_modules/
 
 # Ignore environment variables file
 .env
-
+start_users.json
+users.json
 # Ignore build directory
 /build
 

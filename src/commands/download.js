@@ -34,6 +34,7 @@ const validQualities = [
   "2160p",
 ];
 async function downloadVideo(videoUrl, chatId, bot, userId) {
+  let filePath;
   await requestHandler.process(userId, chatId, bot, async () => {
     try {
       ensureDownloadDirectory();
@@ -60,7 +61,7 @@ async function downloadVideo(videoUrl, chatId, bot, userId) {
         throw new Error(ERROR_MESSAGES.maxFileSize);
       }
 
-      const filePath =
+      filePath =
         selectedFormat.hasAudio && selectedFormat.hasVideo
           ? await downloadVideoWithAudio(
               videoUrl,
@@ -86,8 +87,10 @@ async function downloadVideo(videoUrl, chatId, bot, userId) {
         .deleteMessage(chatId, processingMessage.message_id)
         .catch(() => {});
     } catch (error) {
-      fs.unlinkSync(filePath);
       console.error("Ошибка:", error.message);
+      if (filePath && fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
       const errorMessage = Object.values(ERROR_MESSAGES).includes(error.message)
         ? error.message
         : "";
@@ -467,24 +470,48 @@ var requestHandler = {
         // File doesn't exist, start with empty array
       }
 
-      // Add new user with current date
       const today = new Date();
       const dateStr = `${today.getDate()}.${
         today.getMonth() + 1
       }.${today.getFullYear()}`;
 
-      // Check if user already exists
-      if (!users.some((user) => user.id === userId)) {
+      // Check if user exists
+      const existingUser = users.find((user) => user.id === userId);
+      if (!existingUser) {
+        // Add new user with counter initialized to 0
         users.push({
           id: userId,
           date: dateStr,
+          downloadCount: 0,
         });
+      }
 
-        // Save updated list
+      // Save updated list
+      fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+    } catch (error) {
+      console.error("Error saving user:", error);
+    }
+  },
+  async incrementDownloadCount(userId) {
+    try {
+      // Read existing users
+      const data = fs.readFileSync(USERS_FILE);
+      let users = JSON.parse(data);
+
+      const today = new Date();
+      const dateStr = `${today.getDate()}.${
+        today.getMonth() + 1
+      }.${today.getFullYear()}`;
+
+      // Find and update user's download count and last used date
+      const user = users.find((user) => user.id === userId);
+      if (user) {
+        user.downloadCount = (user.downloadCount || 0) + 1;
+        user.lastUsed = dateStr; // Update last used date
         fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
       }
     } catch (error) {
-      console.error("Error saving user:", error);
+      console.error("Error updating download count:", error);
     }
   },
 
@@ -513,6 +540,7 @@ var requestHandler = {
       // Execute the request
       const result = await requestFunc();
 
+      await this.incrementDownloadCount(userId);
       // Clear processing state
       this.requests.set(userId, { isProcessing: false, time: currentTime });
 

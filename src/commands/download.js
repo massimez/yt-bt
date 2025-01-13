@@ -107,14 +107,9 @@ function ensureDownloadDirectory() {
 }
 
 async function checkUserSubscription(bot, chatId, userId) {
-  let chatMember;
-  try {
-    chatMember = await bot.getChatMember(CHANNEL_USERNAME, userId);
-  } catch (error) {}
-  if (
-    chatMember &&
-    !["member", "administrator", "creator"].includes(chatMember.status)
-  ) {
+  if (!CHANNEL_USERNAME) return;
+  const chatMember = await bot.getChatMember(CHANNEL_USERNAME, userId);
+  if (!["member", "administrator", "creator"].includes(chatMember.status)) {
     throw new Error(ERROR_MESSAGES.notSubscribed);
   }
 }

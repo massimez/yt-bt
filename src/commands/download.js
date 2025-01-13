@@ -108,14 +108,15 @@ function ensureDownloadDirectory() {
 
 async function checkUserSubscription(bot, chatId, userId) {
   if (!CHANNEL_USERNAME) return;
+  let chatMember;
   try {
-    const chatMember = await bot.getChatMember(CHANNEL_USERNAME, userId);
-    if (!["member", "administrator", "creator"].includes(chatMember.status)) {
-      throw new Error(ERROR_MESSAGES.notSubscribed);
-    }
+    chatMember = await bot.getChatMember(CHANNEL_USERNAME, userId);
   } catch (error) {
     console.error("Error checking user subscription:", error);
     throw new Error("Ошибка проверки подписки пользователя");
+  }
+  if (!["member", "administrator", "creator"].includes(chatMember.status)) {
+    throw new Error(ERROR_MESSAGES.notSubscribed);
   }
 }
 
